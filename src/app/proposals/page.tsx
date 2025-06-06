@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import NewProposalModal from '@/components/NewProposalModal';
 import UpdateProposalModal from '@/components/UpdateProposalModal';
-import { Proposal } from '@/lib/supabase';
+import { Proposal, proposalsApi } from '@/lib/supabase';
 
 export default function ProposalsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -15,8 +15,12 @@ export default function ProposalsPage() {
   const [isNewProposalModalOpen, setIsNewProposalModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [selectedProposalContent, setSelectedProposalContent] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'date'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const router = useRouter();
 
   useEffect(() => {
@@ -71,7 +75,12 @@ export default function ProposalsPage() {
     }
   };
 
-  const handleUpdate = async (title: string, file: File | null, customUrl?: string) => {
+  const handleUpdate = async (
+    title: string,
+    file: File | null,
+    customUrl?: string,
+    content?: string
+  ) => {
     if (!selectedProposal) return;
 
     setUploadingId(selectedProposal.id);
@@ -85,6 +94,9 @@ export default function ProposalsPage() {
     formData.append('proposalId', selectedProposal.id);
     if (customUrl) {
       formData.append('customUrl', customUrl);
+    }
+    if (content !== undefined) {
+      formData.append('content', content);
     }
 
     try {
@@ -136,6 +148,43 @@ export default function ProposalsPage() {
     }
   };
 
+  const handleOpenUpdateModal = async (proposalId: string) => {
+    try {
+      const proposal = await proposalsApi.getById(proposalId);
+      setSelectedProposal(proposal);
+      setSelectedProposalContent(proposal?.content || '');
+      setIsUpdateModalOpen(true);
+    } catch (err) {
+      setError('Failed to load proposal content');
+    }
+  };
+
+  // Filter and sort proposals
+  const filteredAndSortedProposals = useMemo(() => {
+    let filtered = proposals;
+    if (searchTerm.trim()) {
+      filtered = filtered.filter((p) =>
+        p.title.toLowerCase().includes(searchTerm.trim().toLowerCase())
+      );
+    }
+    let sorted = [...filtered];
+    if (sortBy === 'name') {
+      sorted.sort((a, b) =>
+        sortOrder === 'asc'
+          ? a.title.localeCompare(b.title)
+          : b.title.localeCompare(a.title)
+      );
+    } else {
+      // sortBy === 'date'
+      sorted.sort((a, b) => {
+        const aDate = new Date(a.updated_at).getTime();
+        const bDate = new Date(b.updated_at).getTime();
+        return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
+      });
+    }
+    return sorted;
+  }, [proposals, searchTerm, sortBy, sortOrder]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100">
@@ -180,12 +229,45 @@ export default function ProposalsPage() {
                     d="M12 4v16m8-8H4"
                   />
                 </svg>
-                {proposals.length === 0 ? 'Upload Your First Proposal' : 'New Proposal'}
+                {proposals.length === 0 ? 'Create Your First Proposal' : 'New Proposal'}
               </button>
             </div>
 
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+              <input
+                type="text"
+                placeholder="Search proposals..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full sm:w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300"
+              />
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Sort by:</label>
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as 'name' | 'date')}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="date">Date</option>
+                  <option value="name">Name</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder(o => (o === 'asc' ? 'desc' : 'asc'))}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-sm flex items-center gap-1"
+                  title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {sortOrder === 'asc' ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+
             <div className="grid gap-6">
-              {proposals.map((proposal) => (
+              {filteredAndSortedProposals.map((proposal) => (
                 <div
                   key={proposal.id}
                   className="bg-white rounded-xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-gray-200"
@@ -194,35 +276,46 @@ export default function ProposalsPage() {
                     <h3 className="text-lg font-semibold text-gray-800 mb-1">
                       {proposal.title}
                     </h3>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 flex items-center gap-4">
                       Last modified: {new Date(proposal.updated_at).toLocaleString()}
+                      <div className="flex items-center gap-6">
+                        <a
+                          href={`/api/download/${proposal.url}`}
+                          download={`${proposal.title || 'proposal'}.html`}
+                          className="text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download
+                        </a>
+                        <a
+                          href={`/${proposal.url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          View
+                        </a>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
-                    <a
-                      href={`/${proposal.url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      View
-                    </a>
-                    <button
-                      onClick={() => {
-                        setSelectedProposal(proposal);
-                        setIsUpdateModalOpen(true);
-                      }}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                      </svg>
-                      Update
-                    </button>
+                    {showDeleteConfirm !== proposal.id && (
+                      <button
+                        onClick={() => handleOpenUpdateModal(proposal.id)}
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Update
+                      </button>
+                    )}
                     {showDeleteConfirm === proposal.id ? (
                       <div className="flex items-center gap-2">
                         <button
@@ -260,7 +353,7 @@ export default function ProposalsPage() {
                 </div>
               ))}
 
-              {proposals.length === 0 && (
+              {filteredAndSortedProposals.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-gray-500">No proposals found</p>
                 </div>
@@ -294,6 +387,7 @@ export default function ProposalsPage() {
           currentTitle={selectedProposal.title}
           currentUrl={selectedProposal.url}
           proposalId={selectedProposal.id}
+          currentContent={selectedProposalContent ?? undefined}
           error={error} // Pass error to modal
         />
       )}

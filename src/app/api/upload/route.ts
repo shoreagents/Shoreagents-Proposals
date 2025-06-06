@@ -28,8 +28,10 @@ export async function POST(request: NextRequest) {
     let fileType = '';
     let extractedTitle = title;
 
-    // If this is an update and no file is provided, get the existing proposal data
-    if (proposalId && !file) {
+    // NEW: Get content from form if present
+    const formContent = formData.get('content') as string | null;
+
+    if (proposalId && !file && !formContent) {
       const existingProposal = await proposalsApi.getById(proposalId);
       if (!existingProposal) {
         return NextResponse.json(
@@ -51,6 +53,18 @@ export async function POST(request: NextRequest) {
       // If no title provided, try to extract it from the HTML content
       if (!extractedTitle) {
         extractedTitle = extractTitleFromHtml(content) || fileName.replace('.html', '');
+      }
+    } else if (formContent) {
+      // If content is provided from the code editor, use it
+      content = formContent;
+      // Use previous file info if available
+      if (proposalId) {
+        const existingProposal = await proposalsApi.getById(proposalId);
+        if (existingProposal) {
+          fileName = existingProposal.file_name;
+          fileSize = existingProposal.file_size;
+          fileType = existingProposal.file_type;
+        }
       }
     }
 

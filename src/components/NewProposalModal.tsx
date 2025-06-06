@@ -29,6 +29,13 @@ export default function NewProposalModal({
   // Add validation state for file
   const [isFileValid, setIsFileValid] = useState(true);
 
+  // Add state for code editor and tab
+  const [content, setContent] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'file' | 'code'>('code');
+
+  // Add drag-and-drop state
+  const [isDragActive, setIsDragActive] = useState(false);
+
   const validateCustomUrl = (url: string): boolean => {
     if (!url) return true; // Empty URL is valid (will use default)
     // Only allow alphanumeric characters and hyphens
@@ -135,55 +142,85 @@ export default function NewProposalModal({
     setIsFileValid(isValid);
     setFile(selectedFile);
     
+    if (selectedFile && isValid) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const fileContent = e.target?.result as string;
+        setContent(fileContent);
+        setActiveTab('code');
+      };
+      reader.readAsText(selectedFile);
+    }
     // Only clear URL-related errors if file is valid
     if (isValid) {
-      // If there's a URL error, keep it
       if (error && !error.includes('URL')) {
         setError(null);
       }
     }
   };
 
+  // Drag-and-drop handlers
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+  };
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) {
+      handleFileSelect({ target: { files: [droppedFile] } } as any);
+    }
+  };
+
   const validateForm = (): boolean => {
-    // Validate file first
-    const isFileValidNow = validateFile(file);
-    setIsFileValid(isFileValidNow);
-    
-    if (!isFileValidNow) {
-      setError('Please select a valid HTML file');
+    // Allow if either file is valid or content is not empty
+    const isFileValidNow = file ? validateFile(file) : false;
+    setIsFileValid(isFileValidNow || !!content.trim());
+    if (!isFileValidNow && !content.trim()) {
+      setError('Please upload a valid HTML file or enter HTML code.');
       return false;
     }
-
     // Then validate URL if it's not empty
     if (customUrl) {
       const isUrlValidNow = validateCustomUrl(customUrl);
       setIsUrlValid(isUrlValidNow);
-
       if (!isUrlValidNow) {
         setError('Invalid custom URL format');
         return false;
       }
-
       if (!isUrlAvailable) {
         setError('This custom URL is already in use');
         return false;
       }
     }
-
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setHasAttemptedSubmit(true);
-
     if (!validateForm()) {
       return;
     }
-
     try {
       const trimmedUrl = customUrl.trim();
-      await onSubmit(file!, trimmedUrl || undefined);
+      // If file exists, submit as before. If not, submit content.
+      if (file) {
+        await onSubmit(file, trimmedUrl || undefined);
+      } else if (content.trim()) {
+        // Create a Blob and File from the code editor content
+        const blob = new Blob([content], { type: 'text/html' });
+        const codeFile = new File([blob], 'proposal.html', { type: 'text/html' });
+        await onSubmit(codeFile, trimmedUrl || undefined);
+      }
       // Reset form
       setFile(null);
       setCustomUrl('');
@@ -192,6 +229,8 @@ export default function NewProposalModal({
       setIsUrlAvailable(true);
       setIsFileValid(true);
       setHasAttemptedSubmit(false);
+      setContent('');
+      setActiveTab('file');
     } catch (err) {
       // Error is handled by parent component
     }
@@ -207,6 +246,8 @@ export default function NewProposalModal({
       setIsUrlAvailable(true);
       setIsFileValid(true);
       setHasAttemptedSubmit(false);
+      setContent('');
+      setActiveTab('code');
     }
   }, [isOpen]);
 
@@ -244,7 +285,7 @@ export default function NewProposalModal({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 mx-4"
+              className="w-full max-w-4xl bg-white rounded-2xl shadow-xl p-6 mx-4"
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-semibold text-gray-800">New Proposal</h2>
@@ -269,35 +310,78 @@ export default function NewProposalModal({
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                <div>
-                  <label
-                    htmlFor="proposal-file"
-                    className="block text-sm font-medium text-gray-700 mb-2"
+                {/* Tabs for file/code */}
+                <div className="flex space-x-4 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('file')}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg ${
+                      activeTab === 'file'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                   >
-                    HTML File
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      id="proposal-file"
-                      accept=".html"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      disabled={isUploading}
-                    />
+                    Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('code')}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg ${
+                      activeTab === 'code'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Code
+                  </button>
+                </div>
+
+                {activeTab === 'file' ? (
+                  <div>
                     <label
                       htmlFor="proposal-file"
-                      className={`block w-full px-4 py-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors text-center ${
-                        hasAttemptedSubmit && !isFileValid ? 'border-red-300' : 'border-gray-300'
-                      }`}
+                      className="block text-sm font-medium text-gray-700 mb-2"
                     >
-                      {file ? file.name : 'Select HTML file'}
+                      HTML File
                     </label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        id="proposal-file"
+                        accept=".html"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        disabled={isUploading}
+                      />
+                      <label
+                        htmlFor="proposal-file"
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`block w-full min-h-32 px-4 py-8 border rounded-lg cursor-pointer transition-colors text-center flex items-center justify-center ${
+                          hasAttemptedSubmit && !isFileValid ? 'border-red-300' : isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {file ? file.name : isDragActive ? 'Drop your HTML file here' : 'Select or drag & drop HTML file'}
+                      </label>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Maximum file size: 5MB
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Maximum file size: 5MB
-                  </p>
-                </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      HTML Content
+                    </label>
+                    <textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="w-full h-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300 font-mono text-sm"
+                      placeholder="Enter HTML content"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label
@@ -315,7 +399,7 @@ export default function NewProposalModal({
                       onPaste={handleCustomUrlPaste}
                       placeholder="Enter custom URL"
                       autoComplete="off"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors ${
                         (!isUrlValid || (customUrl !== '' && !isUrlAvailable)) ? 'border-red-300' : 'border-gray-300'
                       }`}
                       disabled={isUploading}
@@ -348,7 +432,7 @@ export default function NewProposalModal({
                     type="submit"
                     disabled={
                       isUploading || 
-                      !file || 
+                      (!file && !content.trim()) || 
                       !isFileValid || 
                       Boolean(error) || 
                       isCheckingUrl || 

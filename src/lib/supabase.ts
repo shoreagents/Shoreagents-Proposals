@@ -44,11 +44,10 @@ export const proposalsApi = {
     const { data, error } = await supabase
       .from('proposals')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
     
     if (error) throw error;
-    return data;
+    return data?.[0] || null;
   },
 
   // Get a proposal by URL
@@ -56,11 +55,10 @@ export const proposalsApi = {
     const { data, error } = await supabase
       .from('proposals')
       .select('*')
-      .eq('url', url)
-      .single();
+      .eq('url', url);
     
     if (error) throw error;
-    return data;
+    return data?.[0] || null;
   },
 
   // Create a new proposal
@@ -68,11 +66,10 @@ export const proposalsApi = {
     const { data, error } = await supabase
       .from('proposals')
       .insert([proposal])
-      .select()
-      .single();
+      .select();
     
     if (error) throw error;
-    return data;
+    return data?.[0] || null;
   },
 
   // Update a proposal
@@ -81,11 +78,10 @@ export const proposalsApi = {
       .from('proposals')
       .update(updates)
       .eq('id', id)
-      .select()
-      .single();
+      .select();
     
     if (error) throw error;
-    return data;
+    return data?.[0] || null;
   },
 
   // Delete a proposal
@@ -109,9 +105,12 @@ export const proposalsApi = {
       query.neq('id', excludeId);
     }
     
-    const { data, error } = await query.single();
+    const { data, error } = await query;
     
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows returned"
-    return !data;
+    // If there's an error other than "no rows found", throw it
+    if (error && error.code !== 'PGRST116') throw error;
+    
+    // If no rows were found or the query was successful but returned no data, the URL is available
+    return !data || data.length === 0;
   }
 }; 

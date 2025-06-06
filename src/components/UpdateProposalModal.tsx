@@ -6,12 +6,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface UpdateProposalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (title: string, file: File | null, customUrl?: string) => Promise<void>;
+  onSubmit: (title: string, file: File | null, customUrl?: string, content?: string) => Promise<void>;
   isUploading: boolean;
   currentTitle?: string;
   currentUrl?: string;
   proposalId?: string;
   error?: string | null;
+  currentContent?: string;
 }
 
 export default function UpdateProposalModal({
@@ -23,23 +24,45 @@ export default function UpdateProposalModal({
   currentUrl,
   proposalId,
   error: externalError,
+  currentContent,
 }: UpdateProposalModalProps) {
   const [title, setTitle] = useState(currentTitle || '');
   const [file, setFile] = useState<File | null>(null);
   const [customUrl, setCustomUrl] = useState<string>(currentUrl || '');
+  const [content, setContent] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isUrlValid, setIsUrlValid] = useState(true);
   const [isCheckingUrl, setIsCheckingUrl] = useState(false);
   const [isUrlAvailable, setIsUrlAvailable] = useState(true);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
-  // Add validation state for file
   const [isFileValid, setIsFileValid] = useState(true);
+  const [activeTab, setActiveTab] = useState<'file' | 'code'>('file');
+  const [isDragActive, setIsDragActive] = useState(false);
 
-  // Update title and URL when props change
+  // Load content when modal opens
+  useEffect(() => {
+    if (isOpen && currentContent) {
+      setContent(currentContent);
+      setActiveTab('code');
+    }
+  }, [isOpen, currentContent]);
+
+  // Function to check if any field has changed
+  const hasChanges = () => {
+    return (
+      title !== (currentTitle || '') ||
+      customUrl !== (currentUrl || '') ||
+      content !== (currentContent || '') ||
+      file !== null
+    );
+  };
+
+  // Update title, URL, and content when props change
   useEffect(() => {
     setTitle(currentTitle || '');
     setCustomUrl(currentUrl || '');
-  }, [currentTitle, currentUrl]);
+    setContent(currentContent || '');
+  }, [currentTitle, currentUrl, currentContent]);
 
   // Reset form when modal is closed
   useEffect(() => {
@@ -47,13 +70,15 @@ export default function UpdateProposalModal({
       setTitle(currentTitle || '');
       setFile(null);
       setCustomUrl(currentUrl || '');
+      setContent(currentContent || '');
       setError(null);
       setIsUrlValid(true);
       setIsUrlAvailable(true);
       setIsFileValid(true);
       setHasAttemptedSubmit(false);
+      setActiveTab('file');
     }
-  }, [isOpen, currentTitle, currentUrl]);
+  }, [isOpen, currentTitle, currentUrl, currentContent]);
 
   // Update error state when external error changes
   useEffect(() => {
@@ -149,12 +174,50 @@ export default function UpdateProposalModal({
     setIsFileValid(isValid);
     setFile(selectedFile);
     
+    // Read file content if file is selected
+    if (selectedFile && isValid) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const fileContent = e.target?.result as string;
+        setContent(fileContent);
+      };
+      reader.readAsText(selectedFile);
+    }
+    
     // Only clear URL-related errors if file is valid
     if (isValid) {
       // If there's a URL error, keep it
       if (error && !error.includes('URL')) {
         setError(null);
       }
+    }
+  };
+
+  // Add effect to switch to code tab when file is selected
+  useEffect(() => {
+    if (file) {
+      setActiveTab('code');
+    }
+  }, [file]);
+
+  // Drag-and-drop handlers
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+  };
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) {
+      handleFileSelect({ target: { files: [droppedFile] } } as any);
     }
   };
 
@@ -202,10 +265,11 @@ export default function UpdateProposalModal({
 
     try {
       const trimmedUrl = customUrl.trim();
-      await onSubmit(title.trim(), file || null, trimmedUrl || undefined);
+      await onSubmit(title.trim(), file || null, trimmedUrl || undefined, content);
       // Reset form
       setFile(null);
       setCustomUrl('');
+      setContent('');
       setError(null);
       setIsUrlValid(true);
       setIsUrlAvailable(true);
@@ -215,13 +279,6 @@ export default function UpdateProposalModal({
       // Error is handled by parent component
     }
   };
-
-  // Add effect to validate URL when it changes
-  useEffect(() => {
-    if (customUrl) {
-      validateAndUpdateUrl(customUrl);
-    }
-  }, [customUrl]);
 
   return (
     <AnimatePresence>
@@ -243,7 +300,7 @@ export default function UpdateProposalModal({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 mx-4"
+              className="w-full max-w-4xl bg-white rounded-2xl shadow-xl p-6 mx-4"
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-semibold text-gray-800">Update Proposal</h2>
@@ -268,93 +325,128 @@ export default function UpdateProposalModal({
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Title Input */}
                 <div>
-                  <label
-                    htmlFor="proposal-title"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Proposal Title
+                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+                    Title
                   </label>
                   <input
                     type="text"
-                    id="proposal-title"
+                    id="title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300"
                     placeholder="Enter proposal title"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                    disabled={isUploading}
                   />
-                  <p className="mt-1 text-sm text-gray-500">
-                    This will update the title in the HTML file
-                  </p>
                 </div>
 
+                {/* URL Input */}
                 <div>
-                  <label
-                    htmlFor="proposal-file"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    HTML File (Optional)
+                  <label htmlFor="customUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                    Custom URL (optional)
                   </label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      id="proposal-file"
-                      accept=".html"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      disabled={isUploading}
-                    />
-                    <label
-                      htmlFor="proposal-file"
-                      className={`block w-full px-4 py-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors text-center ${
-                        hasAttemptedSubmit && !isFileValid ? 'border-red-300' : 'border-gray-300'
+                  <input
+                    type="text"
+                    id="customUrl"
+                    value={customUrl}
+                    onChange={handleCustomUrlChange}
+                    onPaste={handleCustomUrlPaste}
+                    className={`w-full px-4 py-2 border ${
+                      !isUrlValid || !isUrlAvailable ? 'border-red-500' : 'border-gray-300'
+                    } rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300`}
+                    placeholder="Enter custom URL"
+                  />
+                  {!isUrlValid && (
+                    <p className="mt-1 text-sm text-red-500">
+                      URL can only contain letters, numbers, and hyphens
+                    </p>
+                  )}
+                  {!isUrlAvailable && (
+                    <p className="mt-1 text-sm text-red-500">This URL is already in use</p>
+                  )}
+                </div>
+
+                {/* Content Tabs */}
+                <div>
+                  <div className="flex space-x-4 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('file')}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg ${
+                        activeTab === 'file'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      {file ? file.name : 'Select HTML file (optional)'}
-                    </label>
-                  </div>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Leave empty to only update the title. Maximum file size: 5MB
-                  </p>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="custom-url"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Custom URL (Optional)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      id="custom-url"
-                      value={customUrl}
-                      onChange={handleCustomUrlChange}
-                      onPaste={handleCustomUrlPaste}
-                      placeholder="Enter custom URL"
-                      autoComplete="off"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
-                        (!isUrlValid || (customUrl !== '' && !isUrlAvailable)) ? 'border-red-300' : 'border-gray-300'
+                      Upload File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('code')}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg ${
+                        activeTab === 'code'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
-                      disabled={isUploading}
-                    />
+                    >
+                      Code
+                    </button>
                   </div>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Only letters, numbers, and hyphens allowed. Leave empty to keep current URL.
-                  </p>
+
+                  {activeTab === 'file' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        HTML File
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="proposal-file"
+                          accept=".html"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="proposal-file"
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                          className={`block w-full min-h-32 px-4 py-8 border rounded-lg cursor-pointer transition-colors text-center flex items-center justify-center ${
+                            hasAttemptedSubmit && !isFileValid ? 'border-red-300' : isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {file ? file.name : isDragActive ? 'Drop your HTML file here' : 'Select or drag & drop HTML file'}
+                        </label>
+                      </div>
+                      {!isFileValid && (
+                        <p className="mt-1 text-sm text-red-500">
+                          Please select a valid HTML file (max 5MB)
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        HTML Content
+                      </label>
+                      <textarea
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        className="w-full h-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-300 focus:border-blue-300 font-mono text-sm"
+                        placeholder="Enter HTML content"
+                      />
+                    </div>
+                  )}
                 </div>
 
+                {/* Error Message */}
                 {error && (
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-red-600 text-sm text-center flex items-center justify-center">
-                      <span className="mr-2">⚠️</span>
-                      {error}
-                    </p>
+                    <p className="text-sm text-red-600">{error}</p>
                   </div>
                 )}
 
+                {/* Submit Button */}
                 <div className="flex justify-end gap-4">
                   <button
                     type="button"
@@ -368,11 +460,12 @@ export default function UpdateProposalModal({
                     type="submit"
                     disabled={
                       isUploading || 
-                      (!file && !title.trim()) || 
+                      (!file && !content && !title.trim()) || 
                       !isFileValid || 
                       Boolean(error) || 
                       isCheckingUrl || 
-                      (customUrl !== '' && (!isUrlValid || !isUrlAvailable))
+                      (customUrl !== '' && (!isUrlValid || !isUrlAvailable)) ||
+                      !hasChanges()
                     }
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
