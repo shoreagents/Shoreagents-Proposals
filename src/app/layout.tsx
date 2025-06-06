@@ -15,6 +15,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <meta name="robots" content="noindex, nofollow" />
+      </head>
       <body className={`${inter.className} antialiased`}>
         <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
           {children}
