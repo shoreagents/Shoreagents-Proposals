@@ -48,13 +48,11 @@ export default function FileUploader({ onUpload, isUploading }: FileUploaderProp
 
   return (
     <div className="w-full">
-      <motion.div
+      <div
         {...getRootProps()}
         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
           ${isDragActive ? 'border-blue-500 bg-blue-50 scale-[1.02]' : 'border-gray-300 hover:border-gray-400'}
           ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        whileHover={!isUploading ? { scale: 1.01 } : {}}
-        whileTap={!isUploading ? { scale: 0.99 } : {}}
       >
         <input {...getInputProps()} />
         <AnimatePresence mode="wait">
@@ -101,7 +99,7 @@ export default function FileUploader({ onUpload, isUploading }: FileUploaderProp
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      </div>
 
       <AnimatePresence>
         {error && (
