@@ -203,9 +203,6 @@ export default function ProposalsPage() {
           <h1 className="text-4xl sm:text-5xl font-bold text-gray-800 mb-4">
             Proposals
           </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Manage and update your HTML proposals
-          </p>
         </div>
 
         <div className="bg-white rounded-2xl p-6 sm:p-8 border border-gray-200">
