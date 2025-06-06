@@ -243,7 +243,7 @@ export default function ProposalsPage() {
                 <select
                   value={sortBy}
                   onChange={e => setSortBy(e.target.value as 'name' | 'date')}
-                  className="px-2 py-1 border border-gray-300 rounded-lg text-sm"
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-sm pr-6"
                 >
                   <option value="date">Date</option>
                   <option value="name">Name</option>
